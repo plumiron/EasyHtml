@@ -1,3 +1,5 @@
+import html as _html
+
 settings = dict(
     indent = 4
 )
@@ -42,10 +44,10 @@ class NonVoidTag(Tag):
     """
     Non-void tag
     """
-    def __init__(self, content='', *pargs, **kwargs):
+    def __init__(self, content='', escape=True, *pargs, **kwargs):
         Tag.__init__(self, *pargs, **kwargs)
         self._children = list()
-        self._content = content
+        self._content = _html.escape(content) if escape else content
 
     def __lshift__(self, obj):
         if isinstance(obj, Tag):
@@ -56,24 +58,20 @@ class NonVoidTag(Tag):
             raise ValueError("Can't insert a non-tag object.")
 
     def _reindent(self, level):
-        super()._reindent(level)
+        Tag._reindent(self, level)
         for child in self._children:
             child._reindent(self._indent_level + 1)
 
     def render(self):
-        # add opening tag
         output = ''.join([' {}="{}"'.format(item[0], item[1]) for item in self._attrs.items()])
         output = '{}<{}{}>\n'.format(' ' * settings['indent'] * self._indent_level, self._name, output)
         
-        # insert content
         if self._content:
             output += '{}{}\n'.format(' ' * settings['indent'] * (self._indent_level + 1), self._content)
         
-        # insert child nodes
         for child in self._children:
             output += child.render()
         
-        # add closing tag
         output += '{}</{}>\n'.format(' ' * settings['indent'] * self._indent_level, self._name)
         
         return output
@@ -179,14 +177,23 @@ class dd(NonVoidTag):
     pass
 
 
-class delete(NonVoidTag):
+class del_(NonVoidTag):
     def __init__(self, *args, **kwargs):
         NonVoidTag.__init__(self, *args, **kwargs)
-        self.name = 'del'
+        self._name = 'del'
 
 
 class details(NonVoidTag):
     pass
+
+
+class doctype(VoidTag):
+    """
+    Only support HTML5.
+    """
+    def __init__(self):
+        VoidTag.__init__(self)
+        self._name = '!DOCTYPE html'
 
 
 class div(NonVoidTag):
@@ -301,8 +308,10 @@ class img(NonVoidTag):
     pass
 
 
-class input(NonVoidTag):
-    pass
+class input_(NonVoidTag):
+    def __init__(self, *args, **kwargs):
+        NonVoidTag.__init__(self, *args, **kwargs)
+        self._name = 'input'
 
 
 class ins(NonVoidTag):
@@ -325,12 +334,14 @@ class li(NonVoidTag):
     pass
 
 
-class link(NonVoidTag):
+class link(VoidTag):
     pass
 
 
-class map(NonVoidTag):
-    pass
+class map_(NonVoidTag):
+    def __init__(self, *args, **kwargs):
+        NonVoidTag.__init__(self, *args, **kwargs)
+        self._name = 'map'
 
 
 class mark(NonVoidTag):
@@ -365,8 +376,10 @@ class noscript(NonVoidTag):
     pass
 
 
-class object(NonVoidTag):
-    pass
+class object_(NonVoidTag):
+    def __init__(self, *args, **kwargs):
+        NonVoidTag.__init__(self, *args, **kwargs)
+        self._name = 'object'
 
 
 class ol(NonVoidTag):
@@ -508,3 +521,41 @@ class var(NonVoidTag):
 class video(NonVoidTag):
     pass
 
+
+class EasyHtml(html):
+    """
+    A complete HTML document.
+    Users could use this class to create a complete HTML document.
+    """
+    def __init__(self, *pargs, **kargs):
+        html.__init__(self, *pargs, **kargs)
+        self._head = html.__lshift__(self, head())
+        self._body = html.__lshift__(self, body())
+        self._name = 'html'
+
+    def __lshift__(self, obj):
+        if (isinstance(obj, head) and hasattr(self, '_head')) \
+            or (isinstance(obj, body) and hasattr(self, '_body')):
+            raise ValueError('There is already a %s tag in the HTML document.' % obj.__class__.__name__)
+        return self._body << obj
+
+    def add_css(self, href='', **kargs):
+        self._head << link(rel='stylesheet', type='text/css', href=href, **kargs)
+        return self
+
+    def add_js(self, src='', **kargs):
+        self._body << script(src=src, **kargs)
+        return self
+
+    def add_js_snippet(self, snippet, **kargs):
+        self._body << script(snippet, escape=False, **kargs)
+        return self
+
+    def add_meta(self, **kargs):
+        self._head << meta(**kargs)
+        return self
+
+    def render(self):
+        output = doctype().render()
+        output += html.render(self)
+        return output
